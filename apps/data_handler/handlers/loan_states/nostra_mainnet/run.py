@@ -1,8 +1,12 @@
+""" This module contains the Nostra Mainnet loan state computation class. """
 import logging
 from time import monotonic
 
 import pandas as pd
-from data_handler.handler_tools.constants import NOSTRA_EVENTS_MAPPING, ProtocolAddresses
+from data_handler.handler_tools.constants import (
+    NOSTRA_EVENTS_MAPPING,
+    ProtocolAddresses,
+)
 from data_handler.handler_tools.nostra_mainnet_settings import (
     NOSTRA_MAINNET_ADDRESSES_TO_EVENTS,
     NOSTRA_MAINNET_EVENTS_TO_METHODS,
@@ -26,7 +30,7 @@ class NostraMainnetStateComputation(LoanStateComputationBase):
     PROTOCOL_ADDRESSES = ProtocolAddresses().NOSTRA_MAINNET_ADDRESSES
     INTEREST_RATES_KEYS = ["InterestStateUpdated"]
     EVENTS_METHODS_MAPPING = NOSTRA_MAINNET_EVENTS_TO_METHODS
-    ADDRESSES_TO_EVENTS = (NOSTRA_MAINNET_ADDRESSES_TO_EVENTS,)
+    ADDRESSES_TO_EVENTS = (NOSTRA_MAINNET_ADDRESSES_TO_EVENTS, )
 
     EVENTS_MAPPING = NOSTRA_EVENTS_MAPPING
 
@@ -86,9 +90,7 @@ class NostraMainnetStateComputation(LoanStateComputationBase):
         :return: pd.DataFrame
         """
         nostra_mainnet_state = NostraMainnetState()
-        events_with_interest_rate = (
-            list(self.EVENTS_MAPPING.keys()) + self.INTEREST_RATES_KEYS
-        )
+        events_with_interest_rate = (list(self.EVENTS_MAPPING.keys()) + self.INTEREST_RATES_KEYS)
 
         # Init DataFrame
         df = pd.DataFrame(data)

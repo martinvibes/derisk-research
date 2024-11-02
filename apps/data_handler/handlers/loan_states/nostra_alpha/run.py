@@ -1,8 +1,12 @@
+""" This module contains the logic to compute the loan states for the NOSTRA_ALPHA protocol. """
 import logging
 from time import monotonic
 
 import pandas as pd
-from data_handler.handler_tools.constants import NOSTRA_EVENTS_MAPPING, ProtocolAddresses
+from data_handler.handler_tools.constants import (
+    NOSTRA_EVENTS_MAPPING,
+    ProtocolAddresses,
+)
 from data_handler.handler_tools.nostra_alpha_settings import (
     NOSTRA_ALPHA_ADDRESSES_TO_EVENTS,
     NOSTRA_ALPHA_EVENTS_TO_METHODS,
@@ -35,9 +39,7 @@ class NostraAlphaStateComputation(LoanStateComputationBase):
     EVENTS_METHODS_MAPPING = NOSTRA_ALPHA_EVENTS_TO_METHODS
     ADDRESSES_TO_EVENTS = NOSTRA_ALPHA_ADDRESSES_TO_EVENTS
 
-    def process_interest_rate_event(
-        self, nostra_state: NostraAlphaState, event: pd.Series
-    ) -> None:
+    def process_interest_rate_event(self, nostra_state: NostraAlphaState, event: pd.Series) -> None:
         """
         Processes an interest rate event.
 
@@ -61,9 +63,7 @@ class NostraAlphaStateComputation(LoanStateComputationBase):
         """
         nostra_alpha_state = NostraAlphaState()
 
-        events_with_interest_rate = (
-            list(self.EVENTS_MAPPING.keys()) + self.INTEREST_RATES_KEYS
-        )
+        events_with_interest_rate = (list(self.EVENTS_MAPPING.keys()) + self.INTEREST_RATES_KEYS)
 
         # Init DataFrame
         df = pd.DataFrame(data)

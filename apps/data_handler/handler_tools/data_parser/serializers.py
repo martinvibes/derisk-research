@@ -1,3 +1,4 @@
+""" This module contains the data models and parser class for zkLend data events. """
 from decimal import Decimal
 from pydantic import BaseModel, ValidationInfo, field_validator
 from shared.helpers import add_leading_zeros
@@ -129,7 +130,8 @@ class AccumulatorsSyncEventData(BaseModel):
     @field_validator("token")
     def validate_address(cls, value: str, info: ValidationInfo) -> str:
         """
-        Validates if the value is a valid address and formats it to have leading zeros.
+        Validates if the value is a valid address and formats it to 
+        have leading zeros.
 
         Raises:
             ValueError: If the provided address is invalid.
@@ -227,7 +229,8 @@ class BorrowingEventData(BaseModel):
     @field_validator("user", "token")
     def validate_address(cls, value: str, info: ValidationInfo) -> str:
         """
-        Validates if the value is a valid address and formats it to have leading zeros.
+        Validates if the value is a valid address and formats 
+        it to have leading zeros.
 
         Raises:
             ValueError: If the provided address is invalid.
@@ -258,101 +261,72 @@ class BorrowingEventData(BaseModel):
             )
 
 
-class ZkLendDataParser:
+class WithdrawalEventData(BaseModel):
     """
-    Parser class to convert zkLend data events to human-readable formats.
+    Class for representing withdrawal event data.
+
+    Attributes:
+        user (str): The address of the user making the withdrawal.
+        amount (Decimal): The amount withdrawn.
+        token (str): The address of the token being withdrawn.
     """
 
-    @classmethod
-    def parse_accumulators_sync_event(
-        cls, event_data: List[Any]
-    ) -> AccumulatorsSyncEventData:
+    user: str
+    amount: Decimal
+    token: str
+
+    @field_validator("user", "token")
+    def validate_addresses(cls, value: str) -> str:
         """
-        Parses the AccumulatorsSync event data using the AccumulatorsSyncEventData model.
+        Validates that the provided address starts with '0x' and 
+        formats it with leading zeros.
 
         Args:
-            event_data (List[Any]): A list containing the raw event data.
+            value (str): The address string to validate.
 
         Returns:
-            AccumulatorsSyncEventData: Parsed event data in a human-readable format.
-        """
-        return AccumulatorsSyncEventData(
-            token=event_data[0],
-            lending_accumulator=event_data[1],
-            debt_accumulator=event_data[2],
-        )
+            str: The validated and formatted address.
 
-    @classmethod
-    def parse_deposit_event(cls, event_data: List[Any]) -> DepositEventData:
+        Raises:
+            ValueError: If the provided address does not start with '0x'.
         """
-        Parses the Deposit event data using the DepositEventData model.
+        if not value.startswith("0x"):
+            raise ValueError(f"Invalid address provided: {value}")
+        return add_leading_zeros(value)
+
+    @field_validator("amount", mode="before")
+    def validate_amount(cls, value: str) -> Decimal:
+        """
+        Validates that the provided amount is numeric and converts it to a Decimal.
 
         Args:
-            event_data (List[Any]): A list containing the raw event data.
+            value (str): The amount string to validate.
 
         Returns:
-            DepositEventData: Parsed deposit event data.
+            Decimal: The validated and converted amount as a Decimal.
+
+        Raises:
+            ValueError: If the provided amount is not numeric.
         """
-        return DepositEventData(
-            user=event_data[0],
-            token=event_data[1],
-            face_amount=event_data[2],
-        )
+        if not value.isdigit():
+            raise ValueError("Amount field is not numeric")
+        return Decimal(value)
 
-    @classmethod
-    def parse_borrowing_event(cls, event_data: List[Any]) -> BorrowingEventData:
+
+class CollateralEnabledDisabledEventData(BaseModel):
+    """ Data model representing a collateral enabled/disabled event in the system. """
+    user: str
+    token: str
+
+    @field_validator("user", "token")
+    def validate_valid_addresses(cls, value: str, info: ValidationInfo) -> str:
         """
-        Parses the Borrowing event data using the BorrowingEventData model.
-
-        Args:
-            event_data (List[Any]): A list containing the raw event data.
-
+        Check if the value is an address and format it to having leading zeros.
+        Raises:
+            ValueError
         Returns:
-            BorrowingEventData: Parsed borrowing event data.
+            str
         """
-        return BorrowingEventData(
-            user=event_data[0],
-            token=event_data[1],
-            raw_amount=event_data[2],
-            face_amount=event_data[3],
-        )
-
-    @classmethod
-    def parse_repayment_event(cls, event_data: List[Any]) -> RepaymentEventData:
-        """
-        Parses the Repayment event data using the RepaymentEventData model.
-
-        Args:
-            event_data (List[Any]): A list containing the raw repayment event data.
-
-        Returns:
-            RepaymentEventData: Parsed repayment event data.
-        """
-        return RepaymentEventData(
-            repayer=event_data[0],
-            beneficiary=event_data[1],
-            token=event_data[2],
-            raw_amount=event_data[3],
-            face_amount=event_data[4],
-        )
-
-    @classmethod
-    def parse_liquidation_event(cls, event_data: List[Any]) -> LiquidationEventData:
-        """
-        Parses the Liquidation event data using the LiquidationEventData model.
-
-        Args:
-            event_data (List[Any]): A list containing the raw liquidation event data.
-
-        Returns:
-            LiquidationEventData: Parsed liquidation event data.
-        """
-        return LiquidationEventData(
-            liquidator=event_data[0],
-            user=event_data[1],
-            debt_token=event_data[2],
-            debt_raw_amount=event_data[3],
-            debt_face_amount=event_data[4],
-            collateral_token=event_data[5],
-            collateral_amount=event_data[6],
-        )
+        if not value.startswith("0x"):
+            raise ValueError("Invalid address provided for %s" % info.field_name)
+        return add_leading_zeros(value)

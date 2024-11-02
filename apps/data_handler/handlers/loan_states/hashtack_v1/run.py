@@ -1,9 +1,12 @@
+""" This module contains the class that computes the loan states for the HashtackV1 protocol. """
 import logging
 from time import monotonic
 
 import pandas as pd
 from data_handler.handler_tools.constants import ProtocolAddresses
-from data_handler.handlers.loan_states.abstractions import HashstackBaseLoanStateComputation
+from data_handler.handlers.loan_states.abstractions import (
+    HashstackBaseLoanStateComputation,
+)
 from data_handler.handlers.loan_states.hashtack_v0.utils import HashtackInitializer
 from data_handler.handlers.loan_states.hashtack_v1.events import HashstackV1State
 
@@ -42,9 +45,7 @@ class HashtackV1StateComputation(HashstackBaseLoanStateComputation):
         # init HashtackInitializer
         hashtack_initializer = HashtackInitializer(hashtack_v1_state)
         loan_ids = hashtack_initializer.get_loan_ids(df)
-        hashtack_initializer.set_last_loan_states_per_loan_ids(
-            list(set(loan_ids)), version=1
-        )
+        hashtack_initializer.set_last_loan_states_per_loan_ids(list(set(loan_ids)), version=1)
 
         # Filter out events that are not in the mapping
         df_filtered = df[df["key_name"].isin(events_mapping.keys())]
