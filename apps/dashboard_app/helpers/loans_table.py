@@ -1,22 +1,20 @@
+"""
+This module organizes and handles the loan data in a tabular manner.
+"""
+
 import pandas as pd
 from data_handler.handlers.loan_states.nostra_alpha.events import NostraAlphaState
 from data_handler.handlers.loan_states.nostra_mainnet.events import NostraMainnetState
-from data_handler.handlers.loan_states.zklend.events import ZkLendState
 from shared.state import State
-from shared.types import Prices
+from shared.custom_types import Prices
 
 
 def get_protocol(state: State) -> str:
-    # TODO: Improve the inference.
-    if isinstance(state, ZkLendState):
-        return "zkLend"
-    if isinstance(state, NostraAlphaState) and not isinstance(
-        state, NostraMainnetState
-    ):
-        return "Nostra Alpha"
-    if isinstance(state, NostraMainnetState):
-        return "Nostra Mainnet"
-    raise ValueError
+    """
+    Takes a parameter of State which gets the loan entities and
+    returns the string.
+    """
+    return state.get_protocol_name
 
 
 def get_loans_table_data(
@@ -49,7 +47,7 @@ def get_loans_table_data(
             debt_interest_rate_model=state.interest_rate_models.debt,
             prices=prices,
         )
-        if isinstance(state, NostraAlphaState) or isinstance(state, NostraMainnetState):
+        if isinstance(state, (NostraAlphaState, NostraMainnetState)):
             risk_adjusted_debt_usd = loan_entity.compute_debt_usd(
                 risk_adjusted=True,
                 debt_token_parameters=state.token_parameters.debt,
@@ -105,6 +103,11 @@ def get_supply_function_call_parameters(
     protocol: str,
     token_addresses: list[str],
 ) -> tuple[list[str], str]:
+    """
+    Takes two parameters of name of protocol and token address and then
+    Returns a tuple which the first element is the list of token address and
+    the second is supply function name
+    """
     if protocol == "zkLend":
         return token_addresses, "felt_total_supply"
     if protocol in {"Nostra Alpha", "Nostra Mainnet"}:

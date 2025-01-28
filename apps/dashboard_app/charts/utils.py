@@ -1,19 +1,31 @@
+"""
+This moudel process and transform liquidity, loan, and chart data for protocols.
+"""
+
+import asyncio
 import logging
 import math
+import time
 from collections import defaultdict
 
 import pandas as pd
 import streamlit as st
+from data_handler.handlers.loan_states.abstractions import State
+from shared.amms import SwapAmm
+from shared.constants import PAIRS
 
-from dashboard_app.helpers.ekubo import EkuboLiquidity
-from dashboard_app.helpers.settings import (
+from helpers.ekubo import EkuboLiquidity
+from helpers.loans_table import get_loans_table_data
+from helpers.settings import (
     COLLATERAL_TOKENS,
     DEBT_TOKENS,
     STABLECOIN_BUNDLE_NAME,
     TOKEN_SETTINGS,
     UNDERLYING_SYMBOLS_TO_UNDERLYING_ADDRESSES,
 )
-from dashboard_app.helpers.tools import GS_BUCKET_NAME, get_prices, load_data
+from helpers.tools import get_main_chart_data, get_prices
+
+logger = logging.getLogger(__name__)
 
 
 def process_liquidity(
@@ -77,19 +89,21 @@ def parse_token_amounts(raw_token_amounts: str) -> dict[str, float]:
 
 def create_stablecoin_bundle(data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
-    Creates a stablecoin bundle by merging relevant DataFrames for collateral tokens and debt tokens.
+    Creates a stablecoin bundle by merging relevant DataFrames for collateral tokens and debt
+    tokens.
 
-    For each collateral token specified in `src.settings.COLLATERAL_TOKENS`, this function finds the
-    relevant stablecoin pairs from the provided `data` dictionary and merges the corresponding DataFrames
-    based on the 'collateral_token_price' column. It combines the debt and liquidity data for multiple
-    stablecoin pairs and adds the result back to the `data` dictionary under a new key.
+    For each collateral token specified in `src.settings.COLLATERAL_TOKENS`, this function finds
+    the relevant stablecoin pairs from the provided `data` dictionary and merges the corresponding
+    Dataframes based on the 'collateral_token_price' column. It combines the debt and liquidity
+    data for multiple stablecoin pairs and adds the result back to the `data` dictionary under a
+    new key.
 
     Parameters:
-    data (dict[str, pandas.DataFrame]): A dictionary where the keys are token pairs and the values are
-                                        corresponding DataFrames containing price and supply data.
+    data (dict[str, pandas.DataFrame]): A dictionary where the keys are token pairs and the values
+     are corresponding DataFrames containing price and supply data.
 
-    Returns:
-    dict[str, pandas.DataFrame]: The updated dictionary with the newly created stablecoin bundle added.
+    Returns: dict[str, pandas.DataFrame]:
+    The updated dictionary with the newly created stablecoin bundle added.
     """
 
     # Iterate over all collateral tokens defined in the settings
@@ -109,7 +123,7 @@ def create_stablecoin_bundle(data: dict[str, pd.DataFrame]) -> dict[str, pd.Data
 
             if df.empty:
                 # Log a warning if the DataFrame is empty and skip to the next pair
-                logging.warning(f"Empty DataFrame for pair: {pair}")
+                logging.warning("Empty DataFrame for pair: %s", pair)
                 continue
 
             if combined_df is None:
@@ -149,37 +163,65 @@ def create_stablecoin_bundle(data: dict[str, pd.DataFrame]) -> dict[str, pd.Data
     return data
 
 
-@st.cache_data(ttl=300)
 def get_data(
-    protocol_name: str,
-) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
+    protocol_name: str, state: State
+) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
     """
     Load loan data and main chart data for the specified protocol.
     :param protocol_name: Protocol name.
+    :param state: State to load data for.
     :return: DataFrames containing loan data and main chart data.
     """
-    return load_data(protocol=protocol_name)
+    main_chart_data = {}
+    underlying_addresses_to_decimals = {
+        x.address: int(math.log10(x.decimal_factor)) for x in TOKEN_SETTINGS.values()
+    }
+    current_prices = get_prices(token_decimals=underlying_addresses_to_decimals)
+    t_swap = time.time()
+    swap_amm = SwapAmm()
+    swap_amm.__init__()
+    asyncio.run(swap_amm.get_balance())
+    logging.info(f"swap in {time.time() - t_swap}s")
+
+    for pair in PAIRS:
+        collateral_token_underlying_symbol, debt_token_underlying_symbol = pair.split(
+            "-"
+        )
+        try:
+            main_chart_data[pair] = get_main_chart_data(
+                state=state,
+                prices=current_prices,
+                swap_amms=swap_amm,
+                collateral_token_underlying_symbol=collateral_token_underlying_symbol,
+                debt_token_underlying_symbol=debt_token_underlying_symbol,
+            )
+        except Exception:
+            main_chart_data[pair] = pd.DataFrame()
+
+    loans_data = get_loans_table_data(state=state, prices=current_prices)
+    return main_chart_data, loans_data
 
 
 def get_protocol_data_mappings(
-    current_pair: str, stable_coin_pair: str, protocols: list[str]
-) -> tuple[dict[str, dict], dict[str, dict]]:
+    current_pair: str, stable_coin_pair: str, protocols: list[str], state: State
+) -> tuple[dict[str, pd.DataFrame], dict[str, dict]]:
     """
     Get protocol data mappings for main chart data and loans data.
 
     :param current_pair: The current pair for which data is to be fetched.
     :param stable_coin_pair: The stable coin pair to check against.
     :param protocols: List of protocols for which data is to be fetched.
+    :param state: State to load data for.
     :return: tuple of dictionaries containing:
         - protocol_main_chart_data: Mapping of protocol names to their main chart data.
         - protocol_loans_data: Mapping of protocol names to their loans data.
     """
 
-    protocol_main_chart_data: dict[str, dict] = {}
+    protocol_main_chart_data: dict[str, pd.DataFrame] = {}
     protocol_loans_data: dict[str, dict] = {}
 
     for protocol_name in protocols:
-        main_chart_data, loans_data = get_data(protocol_name)
+        main_chart_data, loans_data = get_data(state=state, protocol_name=protocol_name)
         protocol_loans_data[protocol_name] = loans_data
 
         if current_pair == stable_coin_pair:
@@ -192,41 +234,8 @@ def get_protocol_data_mappings(
     return protocol_main_chart_data, protocol_loans_data
 
 
-def load_stats_data() -> (
-    tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
-):
-    """
-    Load general stats, supply stats, collateral stats, and debt stats data.
-    :return: tuple of DataFrames containing general stats, supply stats, collateral stats, debt stats, and utilization stats.
-    """
-    BASE_GS_PATH = f"gs://{GS_BUCKET_NAME}/data"
-
-    @st.cache_data(ttl=300)
-    def read_and_set_index(file_path: str) -> pd.DataFrame:
-        """
-        Read a parquet file and set the index to 'Protocol'.
-        :param file_path: file_path
-        :return: DataFrame
-        """
-        return pd.read_parquet(file_path, engine="fastparquet").set_index("Protocol")
-
-    # Read the parquet files
-    general_stats = read_and_set_index(f"{BASE_GS_PATH}/general_stats.parquet")
-    supply_stats = read_and_set_index(f"{BASE_GS_PATH}/supply_stats.parquet")
-    collateral_stats = read_and_set_index(f"{BASE_GS_PATH}/collateral_stats.parquet")
-    debt_stats = read_and_set_index(f"{BASE_GS_PATH}/debt_stats.parquet")
-
-    # Calculate TVL (USD)
-    general_stats["TVL (USD)"] = (
-        supply_stats["Total supply (USD)"] - general_stats["Total debt (USD)"]
-    )
-    utilization_stats = read_and_set_index(f"{BASE_GS_PATH}/utilization_stats.parquet")
-
-    return supply_stats, collateral_stats, debt_stats, general_stats, utilization_stats
-
-
 def transform_loans_data(
-    protocol_loans_data_mapping: pd.DataFrame, protocols: list[str]
+    protocol_loans_data_mapping: dict[str, dict], protocols: list[str]
 ) -> pd.DataFrame:
     """
     Transform protocol loans data
@@ -265,10 +274,11 @@ def transform_main_chart_data(
     for protocol in protocols:
         protocol_main_chart_data = protocol_main_chart_data_mapping[protocol]
         if protocol_main_chart_data is None or protocol_main_chart_data.empty:
-            logging.warning(f"No data for pair {current_pair} from {protocol}")
+            logging.warning("No data for pair %s from %s", current_pair, protocol)
             collateral_token, debt_token = current_pair.split("-")
             st.subheader(
-                f":warning: No liquidable debt for the {collateral_token} collateral token and the {debt_token} debt token exists on the {protocol} protocol."
+                f":warning: No liquidable debt for the {collateral_token} collateral token and "
+                f"the {debt_token} debt token exists on the {protocol} protocol."
             )
             continue
 
@@ -277,9 +287,9 @@ def transform_main_chart_data(
             main_chart_data[f"liquidable_debt_{protocol}"] = protocol_main_chart_data[
                 "liquidable_debt"
             ]
-            main_chart_data[f"liquidable_debt_at_interval_{protocol}"] = (
-                protocol_main_chart_data["liquidable_debt_at_interval"]
-            )
+            main_chart_data[
+                f"liquidable_debt_at_interval_{protocol}"
+            ] = protocol_main_chart_data["liquidable_debt_at_interval"]
         else:
             main_chart_data["liquidable_debt"] += protocol_main_chart_data[
                 "liquidable_debt"
@@ -290,8 +300,8 @@ def transform_main_chart_data(
             main_chart_data[f"liquidable_debt_{protocol}"] = protocol_main_chart_data[
                 "liquidable_debt"
             ]
-            main_chart_data[f"liquidable_debt_at_interval_{protocol}"] = (
-                protocol_main_chart_data["liquidable_debt_at_interval"]
-            )
+            main_chart_data[
+                f"liquidable_debt_at_interval_{protocol}"
+            ] = protocol_main_chart_data["liquidable_debt_at_interval"]
 
     return main_chart_data

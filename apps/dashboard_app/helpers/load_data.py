@@ -1,3 +1,7 @@
+"""
+This module loads and handle the data.
+"""
+
 import asyncio
 import logging
 import math
@@ -16,10 +20,9 @@ from dashboard_app.helpers.protocol_stats import (
     get_supply_stats,
     get_utilization_stats,
 )
-from dashboard_app.helpers.tools import get_prices
+from dashboard_app.helpers.tools import add_leading_zeros, get_prices
 
 logger = logging.getLogger(__name__)
-data_connector = DataConnector()
 
 
 class DashboardDataHandler:
@@ -31,6 +34,7 @@ class DashboardDataHandler:
         """
         Initialize the data handler.
         """
+        self.data_connector = DataConnector()
         self.underlying_addresses_to_decimals = defaultdict(dict)
         self.zklend_state = self._init_zklend_state()
         self.prices = None
@@ -41,8 +45,7 @@ class DashboardDataHandler:
             # nostra_mainnet_state,
         ]
 
-    @staticmethod
-    def _init_zklend_state() -> ZkLendState:
+    def _init_zklend_state(self) -> ZkLendState:
         """
         Initialize ZkLend state.
         Fetch data from the database and initialize the state.
@@ -51,9 +54,11 @@ class DashboardDataHandler:
         logger.info("Initializing ZkLend state.")
         zklend_state = ZkLendState()
         start = monotonic()
-        zklend_data = data_connector.fetch_data(data_connector.ZKLEND_SQL_QUERY)
-        zklend_interest_rate_data = data_connector.fetch_data(
-            data_connector.ZKLEND_INTEREST_RATE_SQL_QUERY
+        zklend_data = self.data_connector.fetch_data(
+            self.data_connector.ZKLEND_SQL_QUERY
+        )
+        zklend_interest_rate_data = self.data_connector.fetch_data(
+            self.data_connector.ZKLEND_INTEREST_RATE_SQL_QUERY
         )
 
         zklend_data_dict = zklend_data.to_dict(orient="records")
@@ -70,7 +75,7 @@ class DashboardDataHandler:
         zklend_state.interest_rate_models.debt = zklend_interest_rate_data["debt"].iloc[
             0
         ]
-        logger.info(f"Initialized ZkLend state in {monotonic() - start:.2f}s")
+        logger.info("Initialized ZkLend state in %.2fs", monotonic() - start)
 
         return zklend_state
 
@@ -111,7 +116,7 @@ class DashboardDataHandler:
             )
         self.underlying_addresses_to_decimals.update(
             {
-                x.address: int(math.log10(x.decimal_factor))
+                add_leading_zeros(x.address): int(math.log10(x.decimal_factor))
                 for x in TOKEN_SETTINGS.values()
             }
         )
@@ -193,10 +198,10 @@ class DashboardDataHandler:
         logger.info("Loan stats collected.")
         return loan_stats
 
-    def load_data(self) -> dict:
+    def load_data(self) -> tuple:
         """
         Get the dashboard data.
-        :return: dict - The dashboard data.
+        :return: tuple - The dashboard data.
         """
         logger.info("Getting dashboard data.")
         # Get token parameters.

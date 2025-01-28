@@ -1,18 +1,20 @@
+"""
+This module handles the collection and computation of statistics related to the protocol.
+"""
+
 import asyncio
 from collections import defaultdict
 from decimal import Decimal
 
+import numpy as np
 import pandas as pd
 from data_handler.handlers import blockchain_call
 from shared.constants import TOKEN_SETTINGS
 from shared.state import State
-from shared.types import Prices
+from shared.custom_types import Prices
 
-from dashboard_app.helpers.loans_table import (
-    get_protocol,
-    get_supply_function_call_parameters,
-)
-from dashboard_app.helpers.tools import get_addresses, get_underlying_address
+from dashboard_app.helpers.loans_table import get_protocol, get_supply_function_call_parameters
+from dashboard_app.helpers.tools import add_leading_zeros, get_addresses, get_underlying_address
 
 
 def get_general_stats(
@@ -36,9 +38,12 @@ def get_general_stats(
             {
                 "Protocol": protocol,
                 "Number of active users": number_of_active_users,
-                # At the moment, Hashstack V0 and Hashstack V1 are the only protocols for which the number of active
-                # loans doesn't equal the number of active users. The reason is that Hashstack V0 and Hashstack V1
-                # allow for liquidations on the loan level, whereas other protocols use user-level liquidations.
+                # At the moment, Hashstack V0 and Hashstack V1 are the only protocols
+                #  for which the number of active
+                # loans doesn't equal the number of active users.
+                # The reason is that Hashstack V0 and Hashstack V1
+                # allow for liquidations on the loan level, whereas other
+                #  protocols use user-level liquidations.
                 "Number of active loans": state.compute_number_of_active_loan_entities(),
                 "Number of active borrowers": number_of_active_borrowers,
                 "Total debt (USD)": round(loan_stats[protocol]["Debt (USD)"].sum(), 4),
@@ -109,7 +114,11 @@ def get_supply_stats(
     df = pd.DataFrame(data)
     df["Total supply (USD)"] = sum(
         df[column]
-        * Decimal(prices[TOKEN_SETTINGS[column.replace(" supply", "")].address])
+        * Decimal(
+            prices[
+                add_leading_zeros(TOKEN_SETTINGS[column.replace(" supply", "")].address)
+            ]
+        )
         for column in df.columns
         if "supply" in column
     ).apply(lambda x: round(x, 4))
@@ -119,6 +128,11 @@ def get_supply_stats(
 def get_collateral_stats(
     states: list[State],
 ) -> pd.DataFrame:
+    """
+    Get collateral stats for the dashboard.
+    :param states: States zklend, nostra_alpha, nostra_mainnet
+    :return: DataFrame with collateral stats
+    """
     data = []
     for state in states:
         protocol = get_protocol(state=state)
@@ -146,8 +160,12 @@ def get_collateral_stats(
                             float(loan_entity.collateral.values.get(token_address, 0.0))
                             for loan_entity in state.loan_entities.values()
                         )
-                        / TOKEN_SETTINGS[token].decimal_factor
-                        * float(state.interest_rate_models.collateral[token_address])
+                        / float(TOKEN_SETTINGS[token].decimal_factor)
+                        * float(
+                            state.interest_rate_models.collateral.get(
+                                token_address, 1.0
+                            )
+                        )
                     )
                     token_collaterals[token] += round(collateral, 4)
                 except TypeError:
@@ -172,6 +190,11 @@ def get_collateral_stats(
 def get_debt_stats(
     states: list[State],
 ) -> pd.DataFrame:
+    """
+    Get debts for the dashboard.
+    :param states: States zklend, nostra_alpha, nostra_mainnet
+    :return: DataFrame with debt stats
+    """
     data = []
     for state in states:
         protocol = get_protocol(state=state)
@@ -196,11 +219,11 @@ def get_debt_stats(
                 try:
                     debt = (
                         sum(
-                            float(loan_entity.debt[token_address])
+                            float(loan_entity.debt.get(token_address, 0.0))
                             for loan_entity in state.loan_entities.values()
                         )
-                        / TOKEN_SETTINGS[token].decimal_factor
-                        * float(state.interest_rate_models.debt[token_address])
+                        / float(TOKEN_SETTINGS[token].decimal_factor)
+                        * float(state.interest_rate_models.debt.get(token_address, 1.0))
                     )
                     token_debts[token] = round(debt, 4)
                 except TypeError:
@@ -229,29 +252,50 @@ def get_utilization_stats(
     supply_stats: pd.DataFrame,
     debt_stats: pd.DataFrame,
 ) -> pd.DataFrame:
+    """
+    Get utilization stats for the dashboard.
+    :param general_stats: DataFrame containing general stats.
+    :param supply_stats: DataFrame containing supply stats.
+    :param debt_stats: DataFrame containing debt stats.
+    :return: DataFrame with utilization stats
+    """
+
+    general_stats.columns = general_stats.columns.str.lower()
+    supply_stats.columns = supply_stats.columns.str.lower()
+    debt_stats.columns = debt_stats.columns.str.lower()
+
+    required_columns_general = {"protocol", "total debt (usd)"}
+    required_columns_supply = {"total supply (usd)"}
+    if not required_columns_general.issubset(
+        general_stats.columns
+    ) or not required_columns_supply.issubset(supply_stats.columns):
+        return pd.DataFrame()
+
     data = pd.DataFrame(
         {
-            "Protocol": general_stats["Protocol"],
-            "Total utilization": general_stats["Total debt (USD)"]
-            / (general_stats["Total debt (USD)"] + supply_stats["Total supply (USD)"]),
-            "ETH utilization": debt_stats["ETH debt"]
-            / (supply_stats["ETH supply"] + debt_stats["ETH debt"]),
-            "WBTC utilization": debt_stats["WBTC debt"]
-            / (supply_stats.get("WBTC supply") + debt_stats.get("WBTC debt")),
-            "USDC utilization": debt_stats["USDC debt"]
-            / (supply_stats["USDC supply"] + debt_stats["USDC debt"]),
-            "DAI utilization": debt_stats["DAI debt"]
-            / (supply_stats["DAI supply"] + debt_stats["DAI debt"]),
-            "USDT utilization": debt_stats["USDT debt"]
-            / (supply_stats["USDT supply"] + debt_stats["USDT debt"]),
-            "wstETH utilization": debt_stats["wstETH debt"]
-            / (supply_stats["wstETH supply"] + debt_stats["wstETH debt"]),
-            "LORDS utilization": debt_stats["LORDS debt"]
-            / (supply_stats["LORDS supply"] + debt_stats["LORDS debt"]),
-            "STRK utilization": debt_stats["STRK debt"]
-            / (supply_stats["STRK supply"] + debt_stats["STRK debt"]),
-        },
+            "Protocol": general_stats["protocol"],
+        }
     )
-    utilization_columns = [x for x in data.columns if "utilization" in x]
-    data[utilization_columns] = data[utilization_columns].map(lambda x: round(x, 4))
+
+    total_debt = general_stats["total debt (usd)"].astype(float)
+    total_supply = supply_stats["total supply (usd)"].astype(float)
+    total_utilization = total_debt / (total_debt + total_supply)
+    total_utilization = total_utilization.replace([np.inf, -np.inf], 0).fillna(0)
+    data["Total utilization"] = total_utilization.round(4)
+
+    tokens = ["eth", "wbtc", "usdc", "dai", "usdt", "wsteth", "lords", "strk"]
+
+    for token in tokens:
+        debt_col = f"{token} debt"
+        supply_col = f"{token} supply"
+
+        if debt_col in debt_stats.columns and supply_col in supply_stats.columns:
+            debt = debt_stats[debt_col].astype(float)
+            supply = supply_stats[supply_col].astype(float)
+            utilization = debt / (debt + supply)
+            utilization = utilization.replace([np.inf, -np.inf], 0).fillna(0)
+            data[f"{token.upper()} utilization"] = utilization.round(4)
+        else:
+            data[f"{token.upper()} utilization"] = 0.0
+
     return data

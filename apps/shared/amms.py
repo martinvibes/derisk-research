@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from shared.blockchain_call import balance_of, func_call, get_myswap_pool
 from shared.constants import POOL_MAPPING, TOKEN_SETTINGS
 from shared.helpers import add_leading_zeros
-from shared.types import TokenSettings, TokenValues
+from shared.custom_types import TokenSettings, TokenValues
 
 
 class Pair:
@@ -50,20 +50,27 @@ class Pool(Pair):
         """
         self.id = Pair.tokens_to_id(symbol1, symbol2)
         self.addresses = addresses
+        self.myswap_id = myswap_id
+
+        base_token_info = TOKEN_SETTINGS.get(symbol1)
+        quote_token_info = TOKEN_SETTINGS.get(symbol2)
+        if not base_token_info or not quote_token_info:
+            self.tokens = []
+            return
+
         base_token = SwapAmmToken(
-            symbol=TOKEN_SETTINGS[symbol1].symbol,
-            decimal_factor=TOKEN_SETTINGS[symbol1].decimal_factor,
-            address=TOKEN_SETTINGS[symbol1].address,
+            symbol=base_token_info.symbol,
+            decimal_factor=base_token_info.decimal_factor,
+            address=base_token_info.address,
         )
         quote_token = SwapAmmToken(
-            symbol=TOKEN_SETTINGS[symbol2].symbol,
-            decimal_factor=TOKEN_SETTINGS[symbol2].decimal_factor,
-            address=TOKEN_SETTINGS[symbol2].address,
+            symbol=quote_token_info.symbol,
+            decimal_factor=quote_token_info.decimal_factor,
+            address=quote_token_info.address,
         )
         setattr(self, symbol1, base_token)
         setattr(self, symbol2, quote_token)
         self.tokens = [base_token, quote_token]
-        self.myswap_id = myswap_id
 
     async def get_balance(self) -> None:
         """

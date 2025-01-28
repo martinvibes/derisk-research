@@ -1,12 +1,6 @@
 name: CI Workflow
 
-on:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+on: [push]
 
 
 jobs:
@@ -43,7 +37,7 @@ jobs:
         working-directory: ./apps/data_handler
         run: |
           echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
-          poetry lock --no-update
+          poetry lock
           poetry install
     
       - name: Run Tests for Data Handler
@@ -56,8 +50,8 @@ jobs:
         working-directory: ./apps/shared
         run: |
           echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
-          poetry lock --no-update
-          poetry install
+          poetry lock
+          poetry install --no-root
     
       - name: Run Tests for Shared
         working-directory: ./apps/shared
